@@ -1,0 +1,6 @@
+# Extras for tests and notebooks (not needed to deploy the app).
+-r requirements.txt
+pytest>=8
+jupyterlab>=4
+ipywidgets>=8
+nbconvert>=7

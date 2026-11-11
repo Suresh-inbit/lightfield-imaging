@@ -40,6 +40,12 @@ def load_lf(dataset: str, downsample: int, crop: int, size: int, n_views: int) -
     return L
 
 
+@st.cache_resource(show_spinner="Decoding uploaded light field ...", max_entries=2)
+def load_uploaded(_data: bytes, digest: str, filename: str, angular: tuple, crop, downsample: int) -> lf.LightField:
+    """Cached decode of an uploaded file (keyed on its SHA-1, not the bytes)."""
+    return lf.io.load_upload(_data, filename, angular=tuple(angular), crop_angular=crop, downsample=int(downsample))
+
+
 def alpha_range(dataset: str, downsample: int) -> tuple[float, float]:
     """Suggested refocus alpha range for the loaded light field.
 

@@ -25,6 +25,30 @@ view = lf.aperture.synthesize_view(L, 2.5, 6.0)            # fractional viewpoin
 d = lf.depth.depth_combined(L, alphas=np.linspace(-2, 1.5, 15))['disparity']
 ```
 
+## Your own light fields
+
+Choose **upload your own ...** in the app's dataset selector, or call
+`lf.io.load_upload(bytes, filename)` / `lf.io.from_view_zip` / `lf.io.from_lenslet_image` / `lf.io.from_array`.
+
+| File | Layout |
+|---|---|
+| `.zip` of views | one image per view: Stanford names `out_RR_CC_y_x.png`, any names ending in `row_col`, or a square number of files in row-major order |
+| `.npy` / `.npz` | array of shape `(U, V, H, W)` or `(U, V, H, W, C)` |
+| image (`.png`, `.jpg`, `.tif`) | lenslet / ESLF image: each micro-lens is a `U x V` pixel block (Stanford Lytro archive: 14 x 14) |
+
+Uploads are decoded in memory (nothing is extracted to disk) with a 700 MB size guard.
+
+## Deploying on Streamlit Community Cloud
+
+1. Push this repository to GitHub (the datasets in `data/raw/` are not tracked).
+2. On share.streamlit.io create an app from the repo with **Main file path** `app/streamlit_app.py`.
+3. `requirements.txt` at the repo root is installed automatically; `.streamlit/config.toml` raises the upload limit to 400 MB.
+
+The deployed app starts with the synthetic scene and the upload option; the Stanford
+and Lytro datasets appear only where `scripts/download_data.py` has been run.  The free
+tier has about 1 GB of RAM, so use spatial downsample 4 and a 9 x 9 angular crop for
+Stanford ZIPs.  `requirements-dev.txt` adds pytest and Jupyter for local work.
+
 ## Reading order (docs/)
 
 | # | Document | What you learn | Module |
@@ -72,7 +96,7 @@ See `docs/01_datasets.md` for citations, licences and formats.
 
 ## Status and headline results
 
-* `python -m pytest tests -q`: **74 tests pass** (library + Streamlit AppTest) in about a minute.
+* `python -m pytest tests -q`: **82 tests pass** (library + Streamlit AppTest) in about a minute.
 * 42 figures/animations in `docs/figures/`, regenerated from real data by `scripts/make_figures_*.py`.
 * Refocusing: on Lego Knights (downsample 4, 9 x 9 views) the castle wall is sharp at
   α = -1.0, the knights at 0 and the near floor at +1.0; the usable ranges per

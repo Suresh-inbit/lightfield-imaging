@@ -157,3 +157,154 @@ def available() -> dict[str, bool]:
         "bracelet": (RAW / "stanford_bracelet" / ".done").exists(),
         "lytro": (RAW / "lytro_illum_flowers" / ".done").exists(),
     }
+
+
+# --------------------------------------------------------------------------
+# user-supplied light fields (used by the app's upload option)
+# --------------------------------------------------------------------------
+_IMG_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+_GRID_RE = re.compile(r"(\d+)[_\-x](\d+)")
+
+
+def _box_down(img: np.ndarray, f: int) -> np.ndarray:
+    if f <= 1:
+        return img
+    H, W = (img.shape[0] // f) * f, (img.shape[1] // f) * f
+    return img[:H, :W].reshape(H // f, f, W // f, f, -1).mean(axis=(1, 3))
+
+
+def _check_budget(n_values: int, max_mb: float):
+    mb = n_values * 4 / 1e6
+    if mb > max_mb:
+        raise MemoryError(f"light field would need {mb:.0f} MB as float32 (limit {max_mb:.0f} MB); "
+                          "increase the downsample factor or reduce the angular crop")
+
+
+def from_array(arr: np.ndarray, name: str = "upload", downsample: int = 1,
+               crop_angular: int | None = None) -> LightField:
+    """Wrap an array of shape (U, V, H, W) or (U, V, H, W, C) as a LightField.
+    Integer dtypes are scaled to [0, 1]; floats are divided by their maximum if
+    it exceeds 1."""
+    a = np.asarray(arr)
+    if a.ndim not in (4, 5):
+        raise ValueError(f"expected (U,V,H,W[,C]); got shape {a.shape}")
+    a = _to_float(a)
+    if a.max() > 1.0:
+        a = a / a.max()
+    out = LightField(a, name, {"source": "user array"})
+    if crop_angular and crop_angular < min(out.nu, out.nv):
+        out = out.crop_angular(crop_angular)
+    return out.downsample(downsample) if downsample > 1 else out
+
+
+def from_lenslet_image(img: np.ndarray, angular: tuple[int, int] = (14, 14), crop_angular: int | None = 9,
+                       downsample: int = 1, gain: float | str | None = "auto", name: str = "upload",
+                       max_mb: float = 700.0) -> LightField:
+    """Decode a lenslet (ESLF-style) image: pixel (i, j) holds
+    ``L[u = i % U, v = j % V, s = i // U, t = j // V]``.  The angular crop is
+    applied on the integer data *before* converting to float, so a full Lytro
+    Illum ESLF (5264 x 7574) decodes in well under 1 GB."""
+    if img.ndim == 2:
+        img = img[..., None]
+    img = img[..., :3]
+    au, av = angular
+    H, W = (img.shape[0] // au) * au, (img.shape[1] // av) * av
+    if H == 0 or W == 0:
+        raise ValueError(f"image {img.shape[:2]} is smaller than one {au}x{av} micro-lens block")
+    v = img[:H, :W].reshape(H // au, au, W // av, av, -1)           # (s, u, t, v, c) view, no copy
+    if crop_angular and crop_angular < min(au, av):
+        su, sv = au // 2 - crop_angular // 2, av // 2 - crop_angular // 2
+        v = v[:, su:su + crop_angular, :, sv:sv + crop_angular]
+    _check_budget(v.size, max_mb)
+    lfv = _to_float(np.ascontiguousarray(v.transpose(1, 3, 0, 2, 4)))
+    out = LightField(lfv, name, {"source": "user lenslet image", "angular": angular})
+    if gain is not None:
+        g = float(1.0 / max(np.percentile(out.center_view, 99.5), 1e-6)) if gain == "auto" else float(gain)
+        out = LightField(np.clip(out.views * g, 0, 1), name, {**out.meta, "gain": g})
+    return out.downsample(downsample) if downsample > 1 else out
+
+
+def from_view_zip(data, downsample: int = 1, crop_angular: int | None = None, name: str = "upload",
+                  max_mb: float = 700.0, max_members: int = 1200) -> LightField:
+    """Build a light field from a ZIP of sub-aperture images (read in memory,
+    nothing is extracted to disk).
+
+    Accepted layouts, tried in this order:
+    1. Stanford archive names ``out_RR_CC_<y>_<x>.png`` - axes are flipped as in
+       :func:`load_stanford_rectified` so nearer objects get positive disparity.
+    2. Any names whose last two integer groups are ``row`` and ``column``
+       (``view_03_07.png``, ``3x7.jpg``, ...).
+    3. Otherwise the files are sorted by name and must form a square grid
+       (25 files -> 5 x 5, row-major)."""
+    import io as _io, zipfile, math
+    zf = zipfile.ZipFile(_io.BytesIO(data) if isinstance(data, (bytes, bytearray)) else data)
+    names = sorted(n for n in zf.namelist()
+                   if n.lower().endswith(_IMG_EXT) and not pathlib.PurePosixPath(n).name.startswith("."))
+    if not names:
+        raise ValueError("no image files found in the ZIP")
+    if len(names) > max_members:
+        raise ValueError(f"{len(names)} images in the ZIP (limit {max_members})")
+    ent, coords = {}, {}
+    st = [(_STANFORD_RE.search(pathlib.PurePosixPath(n).name), n) for n in names]
+    if all(m for m, _ in st):
+        for m, n in st:
+            ent[(int(m[1]), int(m[2]))] = n; coords[(int(m[1]), int(m[2]))] = (float(m[3]), float(m[4]))
+    else:
+        gm = [(_GRID_RE.findall(pathlib.PurePosixPath(n).stem), n) for n in names]
+        if all(g for g, _ in gm) and len({tuple(map(int, g[-1])) for g, _ in gm}) == len(names):
+            for g, n in gm:
+                ent[tuple(map(int, g[-1]))] = n
+        else:
+            k = math.isqrt(len(names))
+            if k * k != len(names):
+                raise ValueError(f"{len(names)} images do not form a square grid and the names carry no row/column indices")
+            for i, n in enumerate(names):
+                ent[(i // k, i % k)] = n
+    rows = sorted({r for r, _ in ent}); cols = sorted({c for _, c in ent})
+    if len(rows) * len(cols) != len(ent):
+        raise ValueError("view grid is incomplete (missing row/column combinations)")
+    if crop_angular and crop_angular < min(len(rows), len(cols)):
+        r0, c0 = len(rows) // 2 - crop_angular // 2, len(cols) // 2 - crop_angular // 2
+        rows, cols = rows[r0:r0 + crop_angular], cols[c0:c0 + crop_angular]
+    views = None
+    for i, r in enumerate(rows):
+        for j, c in enumerate(cols):
+            img = _to_float(iio.imread(zf.read(ent[(r, c)])))
+            if img.ndim == 2:
+                img = img[..., None]
+            img = _box_down(img[..., :3], downsample)
+            if views is None:
+                _check_budget(len(rows) * len(cols) * img.size, max_mb)
+                views = np.zeros((len(rows), len(cols)) + img.shape, np.float32)
+            if img.shape != views.shape[2:]:
+                raise ValueError(f"{ent[(r, c)]} has shape {img.shape}, expected {views.shape[2:]}")
+            views[i, j] = img
+    meta = {"source": "user ZIP of views", "downsample": downsample}
+    if coords and len(rows) > 1 and len(cols) > 1:      # same orientation rule as the Stanford loader
+        if coords[(rows[0], cols[-1])][1] > coords[(rows[0], cols[0])][1]:
+            views = views[:, ::-1]
+        if coords[(rows[-1], cols[0])][0] > coords[(rows[0], cols[0])][0]:
+            views = views[::-1]
+        meta["source"] = "user ZIP (Stanford naming)"
+    return LightField(np.ascontiguousarray(views), name, meta)
+
+
+def load_upload(data: bytes, filename: str, angular: tuple[int, int] = (14, 14),
+                crop_angular: int | None = None, downsample: int = 1,
+                gain: float | str | None = "auto") -> LightField:
+    """Dispatch on the file extension: ``.zip`` (views), ``.npy`` / ``.npz``
+    (array), or an image (lenslet / ESLF).  ``allow_pickle`` is off."""
+    import io as _io
+    ext = pathlib.PurePosixPath(filename).suffix.lower()
+    stem = pathlib.PurePosixPath(filename).stem
+    if ext == ".zip":
+        return from_view_zip(data, downsample=downsample, crop_angular=crop_angular, name=stem)
+    if ext in (".npy", ".npz"):
+        a = np.load(_io.BytesIO(data), allow_pickle=False)
+        if ext == ".npz":
+            a = a[a.files[0]]
+        return from_array(a, name=stem, downsample=downsample, crop_angular=crop_angular)
+    if ext in _IMG_EXT:
+        return from_lenslet_image(iio.imread(data), angular=angular, crop_angular=crop_angular,
+                                  downsample=downsample, gain=gain, name=stem)
+    raise ValueError(f"unsupported file type '{ext}' (use .zip, .npy, .npz or an image)")

@@ -1,0 +1,6 @@
+[server]
+maxUploadSize = 400      # MB; a Lytro ESLF PNG is ~190 MB, a Stanford rectified ZIP 230-380 MB
+headless = true
+
+[browser]
+gatherUsageStats = false

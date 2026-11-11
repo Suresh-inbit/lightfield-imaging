@@ -63,3 +63,44 @@ def test_switch_to_lego():
     assert not at.exception
     at = _slider(at, "alpha (refocus").set_value(-1.0).run()
     assert not at.exception
+
+
+def test_upload_option_without_file():
+    """Choosing 'upload' with no file shows instructions instead of failing."""
+    at = AppTest.from_file("app/streamlit_app.py", default_timeout=120).run()
+    at.sidebar.selectbox(key="dataset").set_value("upload").run()
+    assert not at.exception
+    assert any("Accepted files" in i.value for i in at.info)
+
+
+def test_upload_end_to_end(tmp_path):
+    """Run the whole app on an 'uploaded' ZIP of views.  AppTest cannot drive
+    st.file_uploader, so the widget is replaced by a stub returning the file."""
+    import io, zipfile
+    import imageio.v3 as iio
+    L = lf.synthetic.synthetic_light_field(n_views=5, size=64)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for u in range(5):
+            for v in range(5):
+                z.writestr(f"v_{u:02d}_{v:02d}.png",
+                           iio.imwrite("<bytes>", lf.utils.to_uint8(L.view(u, v)), extension=".png"))
+    zpath = tmp_path / "views.zip"; zpath.write_bytes(buf.getvalue())
+    app = pathlib.Path("app/streamlit_app.py").resolve()
+    src = app.read_text().replace("from __future__ import annotations\n", "", 1)
+    shim = f'''from __future__ import annotations
+import sys, pathlib as _p, streamlit as _st
+class _Up:
+    name = "views.zip"
+    def getvalue(self): return _p.Path({str(zpath)!r}).read_bytes()
+_st.sidebar.file_uploader = lambda *a, **k: _Up()
+_st.session_state.setdefault("dataset", "upload")
+_st.session_state.setdefault("ds_up", 1)
+__file__ = {str(app)!r}
+sys.path.insert(0, {str(app.parent)!r})
+'''
+    script = tmp_path / "shim_app.py"; script.write_text(shim + src)
+    at = AppTest.from_file(str(script), default_timeout=180).run()
+    assert not at.exception and not at.error
+    assert len(at.tabs) == 7
+    assert any("5 x 5" in m.value and "64 x 64" in m.value for m in at.sidebar.markdown)

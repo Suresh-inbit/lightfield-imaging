@@ -13,7 +13,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from _common import (ROOT, alpha_range, box, explainer, gate, gif_bytes, load_lf,  # noqa: E402,F401
+from _common import (ROOT, alpha_range, box, explainer, gate, gif_bytes, load_lf, load_uploaded,  # noqa: E402,F401
                      mosaic, plt, safe, show, show_fig)
 import lf  # noqa: E402
 from lf import aperture, depth, edof, hdr, multiplex, plenoptic, refocus  # noqa: E402
@@ -162,8 +162,9 @@ def c_hdr_cmp(_R, rk, alpha, exposure, est_views, photon):
 # ==========================================================================
 st.sidebar.title("Light-field explorer")
 avail = [k for k, v in lf.io.available().items() if v]
-order = [k for k in ("synthetic", "lego", "bracelet", "lytro") if k in avail]
-dataset = st.sidebar.selectbox("Dataset", order, key="dataset")
+order = [k for k in ("synthetic", "lego", "bracelet", "lytro") if k in avail] + ["upload"]
+dataset = st.sidebar.selectbox("Dataset", order, key="dataset",
+                               format_func=lambda k: "upload your own ..." if k == "upload" else k)
 
 downsample, crop, size, nviews = 1, 9, 128, 7
 if dataset in ("lego", "bracelet"):
@@ -173,18 +174,55 @@ if dataset in ("lego", "bracelet"):
 elif dataset == "lytro":
     downsample = st.sidebar.selectbox("Spatial downsample", [1, 2, 4], 1, key="ds_lytro")
     crop = st.sidebar.selectbox("Angular crop (central n x n)", [5, 7, 9, 11, 14], 2, key="crop_ly")
+elif dataset == "upload":
+    up = st.sidebar.file_uploader(
+        "Light field file", type=["zip", "npy", "npz", "png", "jpg", "jpeg", "tif", "tiff"], key="up_file",
+        help="ZIP of sub-aperture images (Stanford 'out_RR_CC_...' names, names ending in row_col, or a "
+             "square number of files in row-major order); a .npy/.npz array of shape (U, V, H, W[, C]); "
+             "or one lenslet / ESLF image (e.g. a Stanford Lytro archive *_eslf.png).")
+    kind = "none" if up is None else ("lenslet" if up.name.lower().rsplit(".", 1)[-1] not in ("zip", "npy", "npz") else "views")
+    up_ang = (14, 14)
+    if kind == "lenslet":
+        a1, a2 = st.sidebar.columns(2)
+        up_ang = (int(a1.number_input("pixels per lens (rows)", 2, 32, 14, key="up_au")),
+                  int(a2.number_input("pixels per lens (cols)", 2, 32, 14, key="up_av")))
+    downsample = st.sidebar.selectbox("Spatial downsample", [1, 2, 4, 8],
+                                      {"lenslet": 1, "views": 2 if up is not None and up.name.lower().endswith(".zip") else 0}.get(kind, 1),
+                                      key="ds_up",
+                                      help="Applied while decoding; raise it if the app reports a memory limit.")
+    crop = st.sidebar.selectbox("Angular crop (central n x n)", [3, 5, 7, 9, 11, 13, 17], 3, key="crop_up",
+                                help="Ignored if the file has fewer views.")
+    if up is None:
+        st.title("Light-field explorer")
+        st.info("Upload a light field in the sidebar to begin, or pick the synthetic dataset.\n\n"
+                "**Accepted files**\n"
+                "- **ZIP of views**: one image per sub-aperture view. Stanford archive names "
+                "(`out_RR_CC_y_x.png`), any names ending in `row_col`, or a square number of files in row-major order.\n"
+                "- **Array**: `.npy` / `.npz` of shape `(U, V, H, W)` or `(U, V, H, W, C)`.\n"
+                "- **Lenslet image**: one PNG/JPG/TIFF where each micro-lens is a `U x V` pixel block "
+                "(the Stanford Lytro archive ESLF format, 14 x 14).\n\n"
+                "Refocus `alpha` is in pixels per view step of the decoded light field; nearer objects are positive "
+                "if views are ordered so the camera moves left/up with increasing index (flip the sign otherwise).")
+        st.stop()
 else:
     size = st.sidebar.select_slider("Synthetic size (px)", [64, 96, 128, 192, 256], 128, key="syn_size")
     nviews = st.sidebar.select_slider("Synthetic views per axis", [3, 5, 7, 9, 11], 7, key="syn_views")
 
 try:
-    L = load_lf(dataset, downsample, crop, size, nviews)
+    if dataset == "upload":
+        import hashlib
+        _bytes = up.getvalue()
+        _dig = hashlib.sha1(_bytes).hexdigest()[:16]
+        L = load_uploaded(_bytes, _dig, up.name, up_ang, crop, downsample)
+    else:
+        L = load_lf(dataset, downsample, crop, size, nviews)
 except Exception as e:  # noqa: BLE001
     st.error(f"Could not load {dataset}: {e}")
-    st.exception(e)
+    if dataset != "upload":
+        st.exception(e)
     st.stop()
 
-LK = f"{dataset}|{downsample}|{crop}|{size}|{nviews}"
+LK = f"{dataset}|{downsample}|{crop}|{size}|{nviews}" + (f"|{_dig}|{up_ang}" if dataset == "upload" else "")
 A_LO, A_HI = alpha_range(dataset, downsample)
 GT = L.meta.get("gt_disparity")
 
