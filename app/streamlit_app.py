@@ -13,10 +13,22 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+# A redeploy (git pull on Streamlit Cloud) re-runs this script but keeps already
+# imported modules, so new app code could run against a stale `lf` package.
+# Compare the source time-stamps with the ones the loaded modules were imported
+# at and re-import everything (and drop caches) when they differ.
+_SRC = pathlib.Path(__file__).resolve().parents[1]
+_STAMP = max(f.stat().st_mtime_ns for d in ("lf", "app") for f in (_SRC / d).glob("*.py"))
+if getattr(sys.modules.get("lf"), "_app_stamp", _STAMP) != _STAMP:
+    for _m in [m for m in sys.modules if m == "lf" or m.startswith("lf.") or m == "_common"]:
+        del sys.modules[_m]
+    st.cache_resource.clear(); st.cache_data.clear()
+
 from _common import (ROOT, alpha_range, box, explainer, gate, gif_bytes, load_lf, load_uploaded,  # noqa: E402,F401
                      mosaic, plt, safe, show, show_fig)
 import lf  # noqa: E402
 from lf import aperture, depth, edof, hdr, multiplex, plenoptic, refocus  # noqa: E402
+lf._app_stamp = _STAMP
 
 st.set_page_config(page_title="Light-field explorer", layout="wide")
 
@@ -162,6 +174,7 @@ def c_hdr_cmp(_R, rk, alpha, exposure, est_views, photon):
 # ==========================================================================
 st.sidebar.title("Light-field explorer")
 avail = [k for k, v in lf.io.available().items() if v]
+avail.sort(key=lambda k: (k != "synthetic", k not in lf.io.BUNDLED))   # synthetic, bundled real data, the rest
 order = avail + ["upload", "download"]          # the default sets plus anything else fetched by scripts/download_data.py
 IS_LYTRO = lambda k: k.startswith("lytro")  # noqa: E731
 IS_STANFORD = lambda k: k not in ("synthetic", "upload", "download") and not IS_LYTRO(k)  # noqa: E731

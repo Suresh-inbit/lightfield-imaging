@@ -112,25 +112,41 @@ def load_lytro_eslf(path: str | pathlib.Path, angular: tuple[int, int] = (14, 14
     in ``meta['gain']``.
     """
     path = pathlib.Path(path)
-    img = _to_float(iio.imread(path))
-    if img.ndim == 2:
-        img = img[..., None]
-    img = img[..., :3]
-    au, av = angular
-    H, W = (img.shape[0] // au) * au, (img.shape[1] // av) * av
-    img = img[:H, :W]
-    lf = img.reshape(H // au, au, W // av, av, -1).transpose(1, 3, 0, 2, 4)  # (u, v, s, t, c)
-    out = LightField(np.ascontiguousarray(lf), name or path.stem,
-                     {"source": "Stanford Lytro Light Field Archive (lightfields.stanford.edu)",
-                      "lenslet_png": str(path)})
-    if crop_angular:
+    # crop the angular grid on the integer data before converting to float:
+    # a full ESLF is 5264 x 7574 px, i.e. ~480 MB as float32 if converted first
+    import cv2                                   # decodes straight to 3 channels: ~half the peak memory of PIL
+    raw = cv2.imread(str(path), cv2.IMREAD_COLOR | cv2.IMREAD_ANYDEPTH)
+    raw = iio.imread(path) if raw is None else raw[..., ::-1]              # BGR -> RGB as a view
+    out = from_lenslet_image(raw, angular=angular, crop_angular=crop_angular,
+                             downsample=downsample, gain=gain, name=name or path.stem, max_mb=2000.0)
+    out.meta.update({"source": "Stanford Lytro Light Field Archive (lightfields.stanford.edu)",
+                     "lenslet_png": str(path)})
+    return out
+
+
+# light fields shipped in the repository: key -> (file, (U, V)); see data/bundled/README.md
+BUNDLED = {"lytro_people": (ROOT / "data" / "bundled" / "lytro_people_9x9.png", (9, 9))}
+
+
+def load_view_mosaic(path: str | pathlib.Path, angular: tuple[int, int], crop_angular: int | None = None,
+                     downsample: int = 1, gain: float | str | None = "auto", name: str | None = None,
+                     **_ignored) -> LightField:
+    """Load a light field stored as one image of ``U x V`` tiled sub-aperture
+    views (row-major).  Same ``gain`` semantics as :func:`load_lytro_eslf`."""
+    path = pathlib.Path(path)
+    img = _to_float(iio.imread(path))[..., :3]
+    U, V = angular
+    H, W = img.shape[0] // U, img.shape[1] // V
+    views = img[:U * H, :V * W].reshape(U, H, V, W, -1).transpose(0, 2, 1, 3, 4)
+    out = LightField(np.ascontiguousarray(views), name or path.stem,
+                     {"source": "bundled sample (Stanford Lytro Light Field Archive)", "file": str(path)})
+    if crop_angular and crop_angular < min(U, V):
         out = out.crop_angular(crop_angular)
     if gain is not None:
         g = float(1.0 / max(np.percentile(out.center_view, 99.5), 1e-6)) if gain == "auto" else float(gain)
-        out = LightField(np.clip(out.views * g, 0, 1), out.name, {**out.meta, "gain": g})
-    if downsample > 1:
-        out = out.downsample(downsample)
-    return out
+        np.multiply(out.views, g, out=out.views); np.clip(out.views, 0, 1, out=out.views)
+        out.meta["gain"] = g
+    return out.downsample(downsample) if downsample > 1 else out
 
 
 def load(name: str, **kw) -> LightField:
@@ -144,6 +160,8 @@ def load(name: str, **kw) -> LightField:
         return load_stanford_rectified(RAW / "stanford_lego_knights", name="lego_knights", **kw)
     if "lytro_illum_flowers" in key or key in ("lytro", "flowers"):
         return load_lytro_eslf(RAW / "lytro_illum_flowers" / "flowers_plants_1_eslf.png", **kw)
+    if key in BUNDLED and not (RAW / key / ".done").exists():   # shipped with the repository
+        return load_view_mosaic(BUNDLED[key][0], BUNDLED[key][1], name=key, **kw)
     for d in (RAW / f"stanford_{key}", RAW / key):          # any other downloaded Stanford scene
         if (d / ".done").exists() and d.name.startswith("stanford_"):
             return load_stanford_rectified(d, name=d.name.removeprefix("stanford_"), **kw)
@@ -164,6 +182,8 @@ def available() -> dict[str, bool]:
         "bracelet": (RAW / "stanford_bracelet" / ".done").exists(),
         "lytro": (RAW / "lytro_illum_flowers" / ".done").exists(),
     }
+    for k, (f, _) in BUNDLED.items():
+        out[k] = f.exists()
     if RAW.exists():
         for d in sorted(RAW.iterdir()):
             if (d / ".done").exists() and d.name not in ("stanford_lego_knights", "stanford_bracelet", "lytro_illum_flowers"):
@@ -227,13 +247,26 @@ def from_lenslet_image(img: np.ndarray, angular: tuple[int, int] = (14, 14), cro
     if crop_angular and crop_angular < min(au, av):
         su, sv = au // 2 - crop_angular // 2, av // 2 - crop_angular // 2
         v = v[:, su:su + crop_angular, :, sv:sv + crop_angular]
-    _check_budget(v.size, max_mb)
-    lfv = _to_float(np.ascontiguousarray(v.transpose(1, 3, 0, 2, 4)))
-    out = LightField(lfv, name, {"source": "user lenslet image", "angular": angular})
+    scale = {np.dtype(np.uint8): 255.0, np.dtype(np.uint16): 65535.0}.get(v.dtype, 1.0)
+    f = max(int(downsample), 1)
+    S, T = (v.shape[0] // f) * f, (v.shape[2] // f) * f
+    _check_budget(v.shape[1] * v.shape[3] * (S // f) * (T // f) * v.shape[4], max_mb)
+    lfv = np.empty((v.shape[1], v.shape[3], S // f, T // f, v.shape[4]), np.float32)
+    for u in range(v.shape[1]):               # one angular row at a time keeps the peak memory low
+        row = v[:S, u, :T].transpose(2, 0, 1, 3).astype(np.float32)        # (v, s, t, c)
+        if f > 1:                             # box-downsample while decoding
+            row = row.reshape(row.shape[0], S // f, f, T // f, f, -1).mean(axis=(2, 4))
+        lfv[u] = row
+    del v, img
+    lfv /= scale
+    meta = {"source": "user lenslet image", "angular": angular}
     if gain is not None:
-        g = float(1.0 / max(np.percentile(out.center_view, 99.5), 1e-6)) if gain == "auto" else float(gain)
-        out = LightField(np.clip(out.views * g, 0, 1), name, {**out.meta, "gain": g})
-    return out.downsample(downsample) if downsample > 1 else out
+        c = lfv[lfv.shape[0] // 2, lfv.shape[1] // 2]
+        g = float(1.0 / max(np.percentile(c, 99.5), 1e-6)) if gain == "auto" else float(gain)
+        lfv *= g
+        np.clip(lfv, 0, 1, out=lfv)
+        meta["gain"] = g
+    return LightField(lfv, name, meta)
 
 
 def from_view_zip(data, downsample: int = 1, crop_angular: int | None = None, name: str = "upload",

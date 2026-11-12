@@ -111,3 +111,14 @@ def test_download_option_lists_catalogue():
     at.sidebar.selectbox(key="dataset").set_value("download").run()
     assert not at.exception
     assert len(at.selectbox(key="dl_pick").options) >= 1
+
+
+def test_bundled_real_light_field_is_available_and_runs():
+    """The repo ships a real Lytro light field, so the app never starts synthetic-only."""
+    assert lf.io.available().get("lytro_people") is True
+    at = AppTest.from_file("app/streamlit_app.py", default_timeout=180).run()
+    opts = at.sidebar.selectbox(key="dataset").options
+    assert opts[0] == "synthetic" and opts[1] == "lytro_people"
+    at.sidebar.selectbox(key="dataset").set_value("lytro_people").run()
+    assert not at.exception and not at.error
+    assert any("9 x 9" in m.value for m in at.sidebar.markdown)
