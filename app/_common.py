@@ -51,7 +51,7 @@ def alpha_range(dataset: str, downsample: int) -> tuple[float, float]:
     (4 for the Stanford sets, 1 for lytro/synthetic); disparities scale with
     1/downsample, so the range is rescaled by ``reference / downsample``."""
     sug = getattr(rf, "SUGGESTED_ALPHA_RANGE", {}) or {}
-    reference = {"lego": 4, "bracelet": 4, "lytro": 1, "lytro_people": 1, "synthetic": 1}
+    reference = {"lego": 4, "bracelet": 4, "lytro": 1, "synthetic": 1}
     if dataset in sug:
         lo, hi = sug[dataset]
         s = reference.get(dataset, 1) / max(float(downsample), 1.0)

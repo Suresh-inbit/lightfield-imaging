@@ -44,8 +44,8 @@ Uploads are decoded in memory (nothing is extracted to disk) with a 700 MB size 
 2. On share.streamlit.io create an app from the repo with **Main file path** `app/streamlit_app.py`.
 3. `requirements.txt` at the repo root is installed automatically; `.streamlit/config.toml` raises the upload limit to 400 MB.
 
-The deployed app starts with the synthetic scene, a bundled real Lytro light field
-(`lytro_people`), the upload option and the in-app downloader. Downloads on Streamlit Cloud land on the app's temporary disk, so they are
+The deployed app starts with the synthetic scene, the bundled real light field
+(`lego`, Lego Knights at 256 x 256), the upload option and the in-app downloader. Downloads on Streamlit Cloud land on the app's temporary disk, so they are
 shared by all visitors and disappear when the app restarts.  The free
 tier has about 1 GB of RAM, so use spatial downsample 4 and a 9 x 9 angular crop for
 Stanford ZIPs.  `requirements-dev.txt` adds pytest and Jupyter for local work.
@@ -88,10 +88,9 @@ lightfield/
 
 | Key | Source | Views | Pixels per view | Notes |
 |---|---|---|---|---|
-| `lego` | Stanford Light Field Archive, Lego Knights | 17 x 17 | 1024 x 1024 | gantry, rectified; load with `downsample=4, angular_crop=9` |
+| `lego` | Stanford Light Field Archive, Lego Knights | 17 x 17 | 1024 x 1024 | gantry, rectified; load with `downsample=4, angular_crop=9`. A 4x-downsampled copy (256 x 256) is bundled in `data/bundled/`, so `lego` works without any download |
 | `bracelet` | Stanford Light Field Archive, Bracelet | 17 x 17 | 1024 x 1024 | gantry, rectified |
 | `lytro` | Stanford Lytro Archive, flowers_plants_1 | 14 x 14 | 376 x 541 | real plenoptic (lenslet) data, ESLF PNG |
-| `lytro_people` | Stanford Lytro Archive, people_1 (bundled in `data/bundled/`) | 9 x 9 | 375 x 540 | real plenoptic data, available without any download |
 | `synthetic` | `lf.synthetic` | any | any | three textured layers, ground-truth disparity |
 
 See `docs/01_datasets.md` for citations, licences and formats.

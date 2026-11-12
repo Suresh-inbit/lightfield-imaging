@@ -113,12 +113,20 @@ def test_download_option_lists_catalogue():
     assert len(at.selectbox(key="dl_pick").options) >= 1
 
 
-def test_bundled_real_light_field_is_available_and_runs():
-    """The repo ships a real Lytro light field, so the app never starts synthetic-only."""
-    assert lf.io.available().get("lytro_people") is True
+def test_bundled_real_light_field_is_available_and_runs(monkeypatch, tmp_path):
+    """The repo ships Lego Knights, so the app has real data with nothing downloaded."""
+    import numpy as np
+    full = lf.io.load("lego", downsample=4, angular_crop=9) if (lf.io.RAW / "stanford_lego_knights" / ".done").exists() else None
+    monkeypatch.setattr(lf.io, "RAW", tmp_path)                 # pretend nothing was downloaded
+    assert lf.io.available() == {"synthetic": True, "lego": True, "bracelet": False, "lytro": False}
+    b = lf.io.load("lego", downsample=4, angular_crop=9)
+    assert b.shape == (9, 9, 256, 256, 3) and b.meta.get("bundled")
+    assert lf.io.load("lego", downsample=8, angular_crop=5).shape == (5, 5, 128, 128, 3)
+    if full is not None:                                        # same data as the downloaded set
+        assert np.abs(b.views - full.views).max() < 1 / 255 + 1e-6
     at = AppTest.from_file("app/streamlit_app.py", default_timeout=180).run()
     opts = at.sidebar.selectbox(key="dataset").options
-    assert opts[0] == "synthetic" and opts[1] == "lytro_people"
-    at.sidebar.selectbox(key="dataset").set_value("lytro_people").run()
+    assert opts[:2] == ["synthetic", "lego"]
+    at.sidebar.selectbox(key="dataset").set_value("lego").run()
     assert not at.exception and not at.error
-    assert any("9 x 9" in m.value for m in at.sidebar.markdown)
+    assert any("9 x 9" in m.value and "256 x 256" in m.value for m in at.sidebar.markdown)

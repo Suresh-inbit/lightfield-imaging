@@ -27,7 +27,6 @@ SUGGESTED_ALPHA_RANGE = {
     "synthetic": (-1.5, 2.0),
     "lego": (-2.0, 1.5),      # lf.io.load('lego', downsample=4, angular_crop=9): wall -1.0, knights 0, near floor +1.0
     "lytro": (-1.5, 1.0),     # lf.io.load('lytro') (crop 9, full res): blossoms -0.5..+0.3, sky/background to -1.5
-    "lytro_people": (-0.75, 0.75),  # lf.io.load('lytro_people') (bundled 9x9, full res): disparities -0.2..+0.4
     "bracelet": (-1.0, 2.0),  # lf.io.load('bracelet', downsample=4, angular_crop=9): far clasp 0, near chain +1.0..+1.5
 }
 

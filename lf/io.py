@@ -125,7 +125,20 @@ def load_lytro_eslf(path: str | pathlib.Path, angular: tuple[int, int] = (14, 14
 
 
 # light fields shipped in the repository: key -> (file, (U, V)); see data/bundled/README.md
-BUNDLED = {"lytro_people": (ROOT / "data" / "bundled" / "lytro_people_9x9.png", (9, 9))}
+# value: (file, (U, V), spatial downsample already applied, RAW directory that supersedes it)
+BUNDLED = {"lego": (ROOT / "data" / "bundled" / "lego_knights_17x17_ds4.png", (17, 17), 4, "stanford_lego_knights")}
+
+
+def _load_bundled(key: str, downsample: int = 4, angular_crop: int | None = None,
+                  crop_angular: int | None = None, name: str | None = None, **_ignored) -> LightField:
+    f, ang, native, _ = BUNDLED[key]
+    if downsample % native and downsample > native:
+        raise ValueError(f"bundled {key} supports downsample {native}, {2 * native}, {4 * native}, ...")
+    out = load_view_mosaic(f, ang, crop_angular=angular_crop or crop_angular, gain=None,
+                           downsample=max(int(downsample) // native, 1), name=name or key)
+    out.meta.update({"source": "bundled sample (Stanford Light Field Archive)",
+                     "downsample": max(int(downsample), native), "bundled": True})
+    return out
 
 
 def load_view_mosaic(path: str | pathlib.Path, angular: tuple[int, int], crop_angular: int | None = None,
@@ -157,11 +170,11 @@ def load(name: str, **kw) -> LightField:
         from .synthetic import synthetic_light_field
         return synthetic_light_field(**kw)
     if "lego" in key:
-        return load_stanford_rectified(RAW / "stanford_lego_knights", name="lego_knights", **kw)
+        if (RAW / "stanford_lego_knights" / ".done").exists():
+            return load_stanford_rectified(RAW / "stanford_lego_knights", name="lego_knights", **kw)
+        return _load_bundled("lego", name="lego_knights", **kw)     # 256 x 256 px sample shipped with the repo
     if "lytro_illum_flowers" in key or key in ("lytro", "flowers"):
         return load_lytro_eslf(RAW / "lytro_illum_flowers" / "flowers_plants_1_eslf.png", **kw)
-    if key in BUNDLED and not (RAW / key / ".done").exists():   # shipped with the repository
-        return load_view_mosaic(BUNDLED[key][0], BUNDLED[key][1], name=key, **kw)
     for d in (RAW / f"stanford_{key}", RAW / key):          # any other downloaded Stanford scene
         if (d / ".done").exists() and d.name.startswith("stanford_"):
             return load_stanford_rectified(d, name=d.name.removeprefix("stanford_"), **kw)
@@ -178,12 +191,10 @@ def available() -> dict[str, bool]:
     listed; other downloaded sets appear under their short key."""
     out = {
         "synthetic": True,
-        "lego": (RAW / "stanford_lego_knights" / ".done").exists(),
+        "lego": (RAW / "stanford_lego_knights" / ".done").exists() or BUNDLED["lego"][0].exists(),
         "bracelet": (RAW / "stanford_bracelet" / ".done").exists(),
         "lytro": (RAW / "lytro_illum_flowers" / ".done").exists(),
     }
-    for k, (f, _) in BUNDLED.items():
-        out[k] = f.exists()
     if RAW.exists():
         for d in sorted(RAW.iterdir()):
             if (d / ".done").exists() and d.name not in ("stanford_lego_knights", "stanford_bracelet", "lytro_illum_flowers"):

@@ -1,10 +1,10 @@
 # Bundled sample light field
 
-`lytro_people_9x9.png` holds the central 9 x 9 sub-aperture views (375 x 540 px each, tiled row-major, lossless,
-no gain applied) of `people_1_eslf.png` from the Stanford Lytro Light Field Archive
-(A. S. Raj, M. Lowney, R. Shah, G. Wetzstein, 2016, <https://lightfields.stanford.edu/LF2016.html>;
-source file <https://lightfields.stanford.edu/images/people/raw/people_1_eslf.png>).
+`lego_knights_17x17_ds4.png` holds all 17 x 17 views of the **Lego Knights** light field from the Stanford (New)
+Light Field Archive (V. Vaish, A. Adams, Stanford Computer Graphics Laboratory, <https://lightfield.stanford.edu/lfs.html>;
+source <https://lightfield.stanford.edu/data/lego_lf/rectified.zip>), box-downsampled 4x to 256 x 256 px per view and
+tiled row-major. The views are stored in this project's orientation (nearer objects have positive disparity).
 
-It is included so the app has a real plenoptic-camera light field at start-up without a 180 MB download.
-Load it with `lf.io.load('lytro_people')`. If the full 14 x 14 ESLF has been downloaded
-(`python scripts/download_data.py lytro_people`), the loader uses that instead.
+It is included so the app has a real light field at start-up without a 373 MB download.
+Load it with `lf.io.load('lego', downsample=4, angular_crop=9)`. If the full-resolution set has been downloaded
+(`python scripts/download_data.py lego`), the loader uses that instead.
