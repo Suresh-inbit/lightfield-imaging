@@ -162,11 +162,50 @@ def c_hdr_cmp(_R, rk, alpha, exposure, est_views, photon):
 # ==========================================================================
 st.sidebar.title("Light-field explorer")
 avail = [k for k, v in lf.io.available().items() if v]
-order = avail + ["upload"]          # the default sets plus anything else fetched by scripts/download_data.py
+order = avail + ["upload", "download"]          # the default sets plus anything else fetched by scripts/download_data.py
 IS_LYTRO = lambda k: k.startswith("lytro")  # noqa: E731
-IS_STANFORD = lambda k: k not in ("synthetic", "upload") and not IS_LYTRO(k)  # noqa: E731
+IS_STANFORD = lambda k: k not in ("synthetic", "upload", "download") and not IS_LYTRO(k)  # noqa: E731
 dataset = st.sidebar.selectbox("Dataset", order, key="dataset",
-                               format_func=lambda k: "upload your own ..." if k == "upload" else k)
+                               format_func=lambda k: {"upload": "upload your own ...",
+                                                      "download": "download from archive ..."}.get(k, k))
+if dataset == "download":
+    from lf import datasets as _ds
+    st.title("Download a light field")
+    st.caption("Files come straight from the Stanford archives and are stored in data/raw/ on the machine "
+               "running this app. Links and citations: docs/dataset_links.md.")
+    todo = [n for n in _ds.DATASETS if not _ds.is_downloaded(n)]
+    if not todo:
+        st.success("Every catalogue entry is already downloaded. Pick one in the dataset selector.")
+        st.stop()
+    pick = st.selectbox("Scene", todo, key="dl_pick",
+                        format_func=lambda n: f"{_ds.DATASETS[n]['title']}  ({_ds.DATASETS[n]['mb']} MB)")
+    spec = _ds.DATASETS[pick]
+    st.markdown(f"Source: {spec['url']}")
+    import shutil as _sh
+    _ds.RAW.mkdir(parents=True, exist_ok=True)
+    free_mb = _sh.disk_usage(_ds.RAW).free / 1e6
+    need_mb = spec["mb"] * (2.1 if spec["unzip"] else 1.0)
+    st.caption(f"Needs about {need_mb:.0f} MB of disk while unpacking; {free_mb:,.0f} MB free.")
+    if free_mb < need_mb + 200:
+        st.error("Not enough free disk space for this scene.")
+        st.stop()
+    if st.button(f"Download {spec['mb']} MB", type="primary", key="dl_go"):
+        bar = st.progress(0.0, text="Connecting ...")
+        def _prog(done, total):
+            bar.progress(min(done / total, 1.0) if total else 0.0,
+                         text=f"{done / 1e6:.0f} / {total / 1e6:.0f} MB")
+        try:
+            _ds.fetch(pick, progress=_prog)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Download failed: {e}. Press the button again to resume.")
+            st.stop()
+        bar.progress(1.0, text="Done")
+        st.session_state["_dl_done"] = spec["key"]
+        st.rerun()
+    if st.session_state.get("_dl_done"):
+        st.success(f"Downloaded. Choose **{st.session_state['_dl_done']}** in the dataset selector.")
+    st.stop()
+
 
 downsample, crop, size, nviews = 1, 9, 128, 7
 if IS_STANFORD(dataset):

@@ -1,6 +1,6 @@
 # Dataset download links
 
-Every link below was checked on 2026-11-12 (HTTP 200; sizes from the server). The files work directly with this project: either through `scripts/download_data.py`, or by uploading them in the app (dataset selector, *upload your own ...*).
+Every link below was checked on 2026-11-12 (HTTP 200; sizes from the server). The files work directly with this project: through `scripts/download_data.py`, through the app's own downloader (dataset selector, *download from archive ...*), or by uploading them in the app (*upload your own ...*). The catalogue behind both is `lf/datasets.py`.
 
 ## 1. Stanford (New) Light Field Archive - gantry, 17 x 17 views
 

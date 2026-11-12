@@ -44,8 +44,9 @@ Uploads are decoded in memory (nothing is extracted to disk) with a 700 MB size 
 2. On share.streamlit.io create an app from the repo with **Main file path** `app/streamlit_app.py`.
 3. `requirements.txt` at the repo root is installed automatically; `.streamlit/config.toml` raises the upload limit to 400 MB.
 
-The deployed app starts with the synthetic scene and the upload option; the Stanford
-and Lytro datasets appear only where `scripts/download_data.py` has been run.  The free
+The deployed app starts with the synthetic scene, the upload option and the in-app
+downloader. Downloads on Streamlit Cloud land on the app's temporary disk, so they are
+shared by all visitors and disappear when the app restarts.  The free
 tier has about 1 GB of RAM, so use spatial downsample 4 and a 9 x 9 angular crop for
 Stanford ZIPs.  `requirements-dev.txt` adds pytest and Jupyter for local work.
 
@@ -97,10 +98,12 @@ See `docs/01_datasets.md` for citations, licences and formats.
 **More data:** [docs/dataset_links.md](docs/dataset_links.md) lists verified download links for all 12 Stanford gantry
 scenes, sample images from the 9 Stanford Lytro categories, and other public datasets.
 `python scripts/download_data.py --list` shows every key the script can fetch.
+The app can also fetch them itself: choose **download from archive ...** in the dataset selector,
+pick a scene and press the button; it then appears in the selector.
 
 ## Status and headline results
 
-* `python -m pytest tests -q`: **82 tests pass** (library + Streamlit AppTest) in about a minute.
+* `python -m pytest tests -q`: **85 tests pass** (library + Streamlit AppTest) in about a minute.
 * 42 figures/animations in `docs/figures/`, regenerated from real data by `scripts/make_figures_*.py`.
 * Refocusing: on Lego Knights (downsample 4, 9 x 9 views) the castle wall is sharp at
   α = -1.0, the knights at 0 and the near floor at +1.0; the usable ranges per

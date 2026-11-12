@@ -104,3 +104,10 @@ sys.path.insert(0, {str(app.parent)!r})
     assert not at.exception and not at.error
     assert len(at.tabs) == 7
     assert any("5 x 5" in m.value and "64 x 64" in m.value for m in at.sidebar.markdown)
+
+
+def test_download_option_lists_catalogue():
+    at = AppTest.from_file("app/streamlit_app.py", default_timeout=120).run()
+    at.sidebar.selectbox(key="dataset").set_value("download").run()
+    assert not at.exception
+    assert len(at.selectbox(key="dl_pick").options) >= 1

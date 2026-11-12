@@ -17,7 +17,7 @@ Conventions used everywhere in this package
   rectified to have ``d = 0``.
 """
 from .lightfield import LightField
-from . import io, synthetic, utils
+from . import io, synthetic, utils, datasets
 # method modules (each is also importable on its own, e.g. ``from lf import refocus``)
 from . import refocus, aperture, depth, edof, plenoptic, multiplex, hdr
 
