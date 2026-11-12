@@ -66,6 +66,8 @@ lf = io.load('lytro')
 * **Stanford Lytro archive** categories: flowers and plants, people, cars, buildings, fruits and vegetables, general scenes, occlusions, reflective surfaces, etc.; each as a raw `.LFR` and an ESLF PNG.
 * Decoding raw `.LFR` files needs a calibrated decoder (Dansereau et al. 2013, "LF Toolbox").
 
+See [dataset_links.md](dataset_links.md) for a verified list of download links to more scenes.
+
 ## 8. References
 
 * A. S. Raj, M. Lowney, R. Shah, G. Wetzstein, "Stanford Lytro Light Field Archive", 2016.

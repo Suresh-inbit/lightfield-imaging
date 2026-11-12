@@ -142,21 +142,33 @@ def load(name: str, **kw) -> LightField:
         return synthetic_light_field(**kw)
     if "lego" in key:
         return load_stanford_rectified(RAW / "stanford_lego_knights", name="lego_knights", **kw)
-    if "bracelet" in key:
-        return load_stanford_rectified(RAW / "stanford_bracelet", name="bracelet", **kw)
-    if "lytro" in key or "flower" in key:
+    if "lytro_illum_flowers" in key or key in ("lytro", "flowers"):
         return load_lytro_eslf(RAW / "lytro_illum_flowers" / "flowers_plants_1_eslf.png", **kw)
-    raise KeyError(name)
+    for d in (RAW / f"stanford_{key}", RAW / key):          # any other downloaded Stanford scene
+        if (d / ".done").exists() and d.name.startswith("stanford_"):
+            return load_stanford_rectified(d, name=d.name.removeprefix("stanford_"), **kw)
+    for d in (RAW / key, RAW / f"lytro_{key}"):             # any other downloaded Lytro sample
+        if (d / ".done").exists():
+            pngs = sorted(d.glob("*_eslf.png"))
+            if pngs:
+                return load_lytro_eslf(pngs[0], **kw)
+    raise KeyError(f"{name!r}: not downloaded (see docs/dataset_links.md and scripts/download_data.py --list)")
 
 
 def available() -> dict[str, bool]:
-    """Which datasets are present on disk."""
-    return {
+    """Which datasets are present on disk.  The three default sets are always
+    listed; other downloaded sets appear under their short key."""
+    out = {
         "synthetic": True,
         "lego": (RAW / "stanford_lego_knights" / ".done").exists(),
         "bracelet": (RAW / "stanford_bracelet" / ".done").exists(),
         "lytro": (RAW / "lytro_illum_flowers" / ".done").exists(),
     }
+    if RAW.exists():
+        for d in sorted(RAW.iterdir()):
+            if (d / ".done").exists() and d.name not in ("stanford_lego_knights", "stanford_bracelet", "lytro_illum_flowers"):
+                out[d.name.removeprefix("stanford_")] = True
+    return out
 
 
 # --------------------------------------------------------------------------

@@ -162,16 +162,18 @@ def c_hdr_cmp(_R, rk, alpha, exposure, est_views, photon):
 # ==========================================================================
 st.sidebar.title("Light-field explorer")
 avail = [k for k, v in lf.io.available().items() if v]
-order = [k for k in ("synthetic", "lego", "bracelet", "lytro") if k in avail] + ["upload"]
+order = avail + ["upload"]          # the default sets plus anything else fetched by scripts/download_data.py
+IS_LYTRO = lambda k: k.startswith("lytro")  # noqa: E731
+IS_STANFORD = lambda k: k not in ("synthetic", "upload") and not IS_LYTRO(k)  # noqa: E731
 dataset = st.sidebar.selectbox("Dataset", order, key="dataset",
                                format_func=lambda k: "upload your own ..." if k == "upload" else k)
 
 downsample, crop, size, nviews = 1, 9, 128, 7
-if dataset in ("lego", "bracelet"):
+if IS_STANFORD(dataset):
     downsample = st.sidebar.selectbox("Spatial downsample", [4, 8, 16], 0, key="ds_stanford",
                                       help="Stanford data is never loaded below 4 (1024x1024x289 is 3.6 GB).")
     crop = st.sidebar.selectbox("Angular crop (central n x n)", [3, 5, 7, 9, 11, 13], 3, key="crop_st")
-elif dataset == "lytro":
+elif IS_LYTRO(dataset):
     downsample = st.sidebar.selectbox("Spatial downsample", [1, 2, 4], 1, key="ds_lytro")
     crop = st.sidebar.selectbox("Angular crop (central n x n)", [5, 7, 9, 11, 14], 2, key="crop_ly")
 elif dataset == "upload":
@@ -201,6 +203,8 @@ elif dataset == "upload":
                 "- **Array**: `.npy` / `.npz` of shape `(U, V, H, W)` or `(U, V, H, W, C)`.\n"
                 "- **Lenslet image**: one PNG/JPG/TIFF where each micro-lens is a `U x V` pixel block "
                 "(the Stanford Lytro archive ESLF format, 14 x 14).\n\n"
+                "Where to get files: see the verified link list in `docs/dataset_links.md` "
+                "(Stanford gantry ZIPs upload as-is; Stanford Lytro `*_eslf.png` files upload as lenslet images).\n\n"
                 "Refocus `alpha` is in pixels per view step of the decoded light field; nearer objects are positive "
                 "if views are ordered so the camera moves left/up with increasing index (flip the sign otherwise).")
         st.stop()

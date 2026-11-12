@@ -31,12 +31,10 @@ def load_lf(dataset: str, downsample: int, crop: int, size: int, n_views: int) -
     """Cached loader.  Stanford gantry data is never loaded below downsample=4."""
     if dataset == "synthetic":
         L = lf.io.load("synthetic", n_views=n_views, size=size)
-    elif dataset in ("lego", "bracelet"):
+    elif dataset.startswith("lytro"):
+        L = lf.io.load(dataset, crop_angular=int(crop), downsample=int(downsample))
+    else:                                   # any Stanford gantry scene on disk
         L = lf.io.load(dataset, downsample=max(int(downsample), 4), angular_crop=int(crop))
-    elif dataset == "lytro":
-        L = lf.io.load("lytro", crop_angular=int(crop), downsample=int(downsample))
-    else:
-        raise KeyError(dataset)
     return L
 
 
@@ -58,6 +56,9 @@ def alpha_range(dataset: str, downsample: int) -> tuple[float, float]:
         lo, hi = sug[dataset]
         s = reference.get(dataset, 1) / max(float(downsample), 1.0)
         return float(lo * s), float(hi * s)
+    if dataset not in ("upload",) and not dataset.startswith("lytro"):   # unmeasured Stanford scene
+        s = 4.0 / max(float(downsample), 1.0)
+        return -2.5 * s, 2.5 * s
     return -2.0, 2.0
 
 

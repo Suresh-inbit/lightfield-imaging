@@ -94,6 +94,10 @@ lightfield/
 
 See `docs/01_datasets.md` for citations, licences and formats.
 
+**More data:** [docs/dataset_links.md](docs/dataset_links.md) lists verified download links for all 12 Stanford gantry
+scenes, sample images from the 9 Stanford Lytro categories, and other public datasets.
+`python scripts/download_data.py --list` shows every key the script can fetch.
+
 ## Status and headline results
 
 * `python -m pytest tests -q`: **82 tests pass** (library + Streamlit AppTest) in about a minute.
