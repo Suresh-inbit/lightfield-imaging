@@ -19,7 +19,7 @@ import streamlit as st  # noqa: E402
 # at and re-import everything (and drop caches) when they differ.
 _SRC = pathlib.Path(__file__).resolve().parents[1]
 _STAMP = max(f.stat().st_mtime_ns for d in ("lf", "app") for f in (_SRC / d).glob("*.py"))
-if getattr(sys.modules.get("lf"), "_app_stamp", _STAMP) != _STAMP:
+if "lf" in sys.modules and getattr(sys.modules["lf"], "_app_stamp", None) != _STAMP:   # no stamp = loaded by older code
     for _m in [m for m in sys.modules if m == "lf" or m.startswith("lf.") or m == "_common"]:
         del sys.modules[_m]
     st.cache_resource.clear(); st.cache_data.clear()
